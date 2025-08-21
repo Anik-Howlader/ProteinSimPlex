@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Protein Viewer : ProteinSimPleX</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background-color: #000;
+            color: white;
+            font-family: "Segoe UI", sans-serif;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background-color: rgba(0, 0, 0, 0);
+            color: #00f2ff;
+            padding: 15px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            z-index: 100;
+        }
+
+        footer {
+            background-color: rgba(0, 0, 0, 0);
+            color: #888;
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            z-index: 10;
+        }
+
+        footer a {
+            color: #00f2ff;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        #mainContent {
+            position: relative;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            padding: 50px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-top: 50px;
+            background-color: rgba(30, 30, 30, 0);
+            z-index: 20;
+            color: white;
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+        }
+
+        #viewport {
+            height: 100%;
+            width: 100%;
+            position: relative;
+            z-index: 10;
+        }
+
+        h2 {
+            font-size: 14px;
+            margin: 0 0 8px;
+            color: #00f2ff;
+        }
+
+        input,
+        select,
+        button {
+            padding: 6px;
+            font-size: 12px;
+            background: rgba(80, 80, 80, 0.5);
+            color: #fff;
+            border: 1px solid #666;
+            border-radius: 4px;
+            width: 100%;
+        }
+
+        h1 {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-weight: 900;
+            font-size: 1.2rem;
+            user-select: none;
+            letter-spacing: 0;
+        }
+
+        h1 .capital {
+            font-size: 1.9em;
+            font-weight: 900;
+            vertical-align: middle;
+            display: inline-block;
+            /* remove extra space */
+            margin: 0;
+            padding: 0;
+        }
+
+        button:hover {
+            background: rgba(120, 120, 120, 0.6);
+            cursor: pointer;
+        }
+
+        .icon-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2em;
+            color: #00f2ff;
+            display: none;
+            z-index: 30;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+
+
+    <!-- Main App Content -->
+    <div class="sidebar">
+        <h1>
+            <span class="capital" style="color:#f34637;">P</span>rotein
+            <span class="capital" style="color:#6B5B95;">S</span>im
+            <span class="capital" style="color:#89dd0a;">P</span>le
+            <span class="capital" style="color:#fae823;">X</span>
+        </h1>
+         <label>Find your protein:</label>
+        <input type="text" id="pdbId" value="1A3N" maxlength="4" placeholder="Enter PDB ID" />
+
+        <button class="icon-btn" onclick="loadStructure()"><i class="fas fa-download"></i> Protein 3D View</button>
+
+        <label>Representation:</label>
+        <button class="icon-btn" onclick="setRepresentation('cartoon')"> Cartoon</button>
+        <button class="icon-btn" onclick="setRepresentation('surface')">
+            Surface</button>
+        <button class="icon-btn" onclick="setRepresentation('ball+stick')">Ball &
+            Stick</button>
+
+        <label>Color Scheme:</label>
+        <select id="colorScheme" onchange="applyColorScheme()">
+            <option value="chainid">Chain</option>
+            <option value="residueindex">Residue Index</option>
+            <option value="element">Element</option>
+            <option value="sstruc">Secondary Structure</option>
+        </select>
+
+        <button onclick="displayBindingSites()">Show Binding Sites</button>
+        <button onclick="clearBindingSiteHighlight()">Clear Binding Sites</button>
+
+        <button class="icon-btn" onclick="exportImage()"><i class="fas fa-camera"></i> Export PNG</button>
+    </div>
+
+    <div id="viewport">
+        <div class="spinner" id="spinner"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
+    </div>
+    </div>
+
+    <!-- App Footer -->
+    <footer>
+        © 2025 Protein Viewer . <a href="https://nglviewer.org/" target="_blank">arctictern</a> · Built with <a
+            href="https://nglviewer.org/" target="_blank">NGL Viewer</a>
+    </footer>
+
+    <script>
+        let stage, currentComponent, bindingSiteRepr, motifHighlightRepr;
+        const bindingSites = [
+            { chain: "A", resno: 15 },
+            { chain: "A", resno: 16 },
+            { chain: "B", resno: 45 },
+            { chain: "B", resno: 46 }
+        ];
+
+
+        window.addEventListener("load", () => {
+            stage = new NGL.Stage("viewport", { backgroundColor: "black" });
+            window.addEventListener("resize", () => stage.handleResize());
+            loadStructure();
+        });
+
+        function showSpinner(show) {
+            document.getElementById("spinner").style.display = show ? "block" : "none";
+        }
+
+        function loadStructure() {
+            const pdbId = document.getElementById("pdbId").value.trim().toUpperCase();
+            if (pdbId.length !== 4) {
+                alert("Enter a valid 4-character PDB ID.");
+                return;
+            }
+
+            showSpinner(true);
+            stage.removeAllComponents();
+            clearMotifHighlight();
+            clearBindingSiteHighlight();
+
+            stage.loadFile(`rcsb://${pdbId}`, { defaultRepresentation: false }).then(comp => {
+                currentComponent = comp;
+                setRepresentation("cartoon");
+                applyColorScheme();
+                comp.autoView();
+                showSpinner(false);
+            }).catch(err => {
+                alert("Failed to load PDB.");
+                showSpinner(false);
+                console.error(err);
+            });
+        }
+
+        function setRepresentation(style) {
+            if (!currentComponent) return;
+            currentComponent.removeAllRepresentations();
+            currentComponent.addRepresentation(style, {
+                colorScheme: document.getElementById("colorScheme").value
+            });
+
+            if (motifHighlightRepr) searchMotif();
+            if (bindingSiteRepr) displayBindingSites();
+        }
+
+        function applyColorScheme() {
+            if (!currentComponent) return;
+            const scheme = document.getElementById("colorScheme").value;
+            currentComponent.reprList.forEach(r => r.setColor(scheme));
+        }
+
+        function exportImage() {
+            stage.makeImage({ factor: 2, antialias: true }).then(blob => {
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = "protein_view.png";
+                a.click();
+            });
+        }
+
+        function displayBindingSites() {
+            if (!currentComponent || bindingSites.length === 0) return;
+            const selection = bindingSites.map(b => `:${b.chain} and ${b.resno}`).join(" or ");
+            if (bindingSiteRepr) bindingSiteRepr.dispose();
+            bindingSiteRepr = currentComponent.addRepresentation("spacefill", {
+                sele: selection,
+                color: "magenta"
+            });
+        }
+
+        function clearBindingSiteHighlight() {
+            if (bindingSiteRepr) {
+                bindingSiteRepr.dispose();
+                bindingSiteRepr = null;
+            }
+        }
+
+        function clearMotifHighlight() {
+            if (motifHighlightRepr) {
+                motifHighlightRepr.dispose();
+                motifHighlightRepr = null;
+            }
+        }
+    </script>
+
+</body>
+
+</html>
